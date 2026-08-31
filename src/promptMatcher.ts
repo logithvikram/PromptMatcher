@@ -7,7 +7,7 @@ import { BM25 } from 'fast-bm25';
  * Internal metadata kept per prompt file so we can retrieve the raw
  * markdown content after BM25 returns a document index.
  */
-interface PromptRecord {
+export interface PromptRecord {
   filePath: string;
   content: string;
 }
@@ -91,6 +91,26 @@ export class PromptMatcher {
   // ---------------------------------------------------------------------------
 
   /**
+   * Find the single best matching prompt record given a composite query string.
+   * Returns the matched PromptRecord (file path and content) for the highest-scoring
+   * BM25 result (only when score > 0), or null if no match is found.
+   */
+  public findBestPromptRecord(compositeQuery: string): PromptRecord | null {
+    if (!this.bm25 || this.records.length === 0) {
+      return null;
+    }
+
+    const results = this.bm25.search(compositeQuery, 1);
+
+    if (results.length === 0 || results[0].score <= 0) {
+      return null;
+    }
+
+    const best = results[0];
+    return this.records[best.index] ?? null;
+  }
+
+  /**
    * Find the single best matching prompt given a composite query string.
    *
    * @param compositeQuery  Pre-built query that combines the user prompt with
@@ -101,20 +121,8 @@ export class PromptMatcher {
    *          or an empty string if no index has been built yet.
    */
   public findBestPrompt(compositeQuery: string): string {
-    if (!this.bm25 || this.records.length === 0) {
-      return '';
-    }
-
-    // BM25.search() uses the library's tokenizer internally — no manual
-    // tokenisation needed on our side.
-    const results = this.bm25.search(compositeQuery, 1);
-
-    if (results.length === 0) {
-      return '';
-    }
-
-    const best = results[0];
-    return this.records[best.index]?.content ?? '';
+    const record = this.findBestPromptRecord(compositeQuery);
+    return record?.content ?? '';
   }
 
   /**

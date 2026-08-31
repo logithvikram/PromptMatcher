@@ -142,12 +142,12 @@ PromptMatcher/
 
 Each `.md` file from `awesome-copilot` is parsed with `gray-matter` and indexed as a structured document:
 
-| Field | Boost | Source |
-|---|---|---|
-| `name` | ×3 | Front-matter `name` / `title` / filename |
-| `description` | ×2 | Front-matter `description` |
-| `tags` | ×2 | Front-matter `tags` |
-| `content` | ×1 | Markdown body |
+| Field | Boost | Source | Purpose |
+|---|---|---|---|
+| `name` | ×3 | Front-matter `name` / `title` / filename | Highest priority for intent matching |
+| `description` | ×2 | Front-matter `description` | High priority for summary matching |
+| `tags` | ×2 | Front-matter `tags` | High priority for category keywords |
+| `content` | ×1 | Markdown body | Base priority for body text search |
 
 ### Query construction (on each request)
 

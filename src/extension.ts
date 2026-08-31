@@ -48,7 +48,14 @@ export async function activate(context: vscode.ExtensionContext) {
       log.info(`[Query] repo context snippet: ${repoContext.slice(0, 200)}`);
 
       // 2. BM25 matching against prompt template library
-      const injectedPrompt = matcher.findBestPrompt(compositeQuery);
+      const match = matcher.findBestPromptRecord(compositeQuery);
+      if (match) {
+        const fileName = path.basename(match.filePath);
+        log.info(`[Matcher] Selected prompt template: "${fileName}" (${match.filePath})`);
+      } else {
+        log.info('[Matcher] No prompt template matched. Proceeding with raw user prompt.');
+      }
+      const injectedPrompt = match ? match.content : '';
       log.info(`[Matcher] injected prompt length: ${injectedPrompt.length} chars`);
 
       // 3. Assemble message payload
