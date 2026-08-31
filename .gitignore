@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Compiled output
+dist/
+out/
+
+# Packaged extension (never commit built binaries)
+*.vsix
+
+# VS Code staging directory
+vsix-staging/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Crash dumps
+*.stackdump
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editor settings (keep .vscode/launch.json if you want)
+.vscode/*
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Environment files
+.env
+.env.*

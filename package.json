@@ -1,0 +1,42 @@
+{
+  "name": "dev-chat-agent",
+  "displayName": "Dev Auto-Prompt Agent",
+  "description": "Intent-aware chat participant that auto-selects instruction templates from awesome-copilot.",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "dev-chat-agent.dev",
+        "name": "dev",
+        "description": "Auto-detects task domain and injects appropriate awesome-copilot prompts",
+        "isUnhelpfulWarningProvided": true
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --watch",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "dependencies": {
+    "fast-bm25": "^0.0.6",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "2.15.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.0"
+  }
+}

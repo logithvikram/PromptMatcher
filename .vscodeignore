@@ -1,0 +1,7 @@
+.vscode/**
+src/**
+tsconfig.json
+bash.exe.stackdump
+vsix-staging/**
+*.vsix
+!dist/**
