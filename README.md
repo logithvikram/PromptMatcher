@@ -8,8 +8,8 @@
 
 | Feature | Detail |
 |---|---|
-| 🔍 **BM25 search** | Uses [`fast-bm25`](https://github.com/patelvivekdev/fast-bm25) for accurate, library-grade ranking — no hand-rolled tokenization |
-| 🧠 **Repo-aware context** | Reads your active file language, cursor position, selected code, and open tabs to enrich matching |
+| 🔍 **BM25 search** | Uses [`fast-bm25`](https://github.com/patelvivekdev/fast-bm25) for accurate, library-grade ranking across awesome-copilot skills, prompts, and agents |
+| 🌐 **Universal repo awareness** | Generic scanner for any repository type (Node, Python, Rust, Go, Java, C++, .NET, PHP, Ruby, mobile, DevOps) — lets the model autonomously understand entrypoints & architecture |
 | 📚 **awesome-copilot library** | Auto-syncs prompt templates from [github/awesome-copilot](https://github.com/github/awesome-copilot) on first use |
 | 🎛️ **Your model, your choice** | Uses whatever model you select in the VS Code chat UI — no override, no lock-in |
 | ⚡ **Field-boosted index** | Template `name` (×3), `description` (×2), `tags` (×2), `content` (×1) for precise relevance |
@@ -56,7 +56,7 @@ Open the Chat panel (`Ctrl+Alt+I` / `Cmd+Alt+I`) and mention `@dev`:
 ```
 Your prompt
     +
-Repo context (language, file, cursor code, open tabs, chat history)
+Universal repo context (file tree, manifests, tech stack, active editor, open tabs)
          │
          ▼
   BM25 search over awesome-copilot templates
@@ -65,17 +65,20 @@ Repo context (language, file, cursor code, open tabs, chat history)
   Best matching template (if score > 0)
          │
          ▼
-  [INSTRUCTION MANUAL]          ← injected only when a match is found
+  [INSTRUCTION MANUAL & BEST PRACTICES]   ← injected only when a match is found
   <matched template content>
+
+  [WORKSPACE OVERVIEW & ARCHITECTURE]     ← universal layout, manifests & stack
+  <file tree, tech stack, config files>
 
   [USER REQUEST]
   <your original prompt>
          │
          ▼
-  Your selected model responds
+  Your selected model decides entrypoints/architecture and delivers precise code
 ```
 
-> If no template matches well enough (BM25 score = 0), your request is forwarded to the model as-is — you always get an answer.
+> If no template matches well enough (BM25 score = 0), your request is forwarded to the model with complete repository context — you always get an answer.
 
 ---
 
@@ -125,7 +128,7 @@ Then press **F5** in VS Code to open an Extension Development Host with the exte
 ```
 PromptMatcher/
 ├── src/
-│   ├── extension.ts        # Entry point — activates chat participant, builds repo context
+│   ├── extension.ts        # Entry point — activates chat participant, builds universal repo context
 │   ├── promptFetcher.ts    # Downloads awesome-copilot templates from GitHub on first use
 │   └── promptMatcher.ts    # BM25 index (fast-bm25) + findBestPrompt()
 ├── dist/                   # Compiled output (git-ignored)
@@ -156,10 +159,11 @@ The composite query fed to BM25 includes:
 | Signal | Example |
 |---|---|
 | User prompt | `"write unit tests for this function"` |
+| Tech stack & manifests | `techstack:.ts (40 files), .json manifest:package.json` |
 | Active language | `language:typescript` |
 | Active filename | `file:promptMatcher.ts` |
-| Selected text | `selection:<up to 500 chars>` |
-| Cursor context | `context:<±10 lines around cursor>` |
+| Selected text | `selection:<up to 1500 chars>` |
+| Cursor context | `context:<surrounding lines around cursor>` |
 | Open tabs | `openfiles:extension.ts package.json ...` |
 | Recent history | `history:<last 3 user messages>` |
 

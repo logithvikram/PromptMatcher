@@ -77,11 +77,17 @@ export async function activate(context: vscode.ExtensionContext) {
       const payloadSections: string[] = [];
 
       if (injectedPrompt) {
-        payloadSections.push(`[INSTRUCTION MANUAL]\n${injectedPrompt}`);
+        payloadSections.push(
+          `[INSTRUCTION MANUAL & BEST PRACTICES]\n` +
+          `Follow these matched instructions and guidelines to complete the task:\n${injectedPrompt}`
+        );
       }
 
       if (promptRepoContext) {
-        payloadSections.push(`[WORKSPACE & CODEBASE CONTEXT]\n${promptRepoContext}`);
+        payloadSections.push(
+          `[WORKSPACE OVERVIEW & ARCHITECTURE CONTEXT]\n` +
+          `Analyze the workspace layout, detected technology stack, active editor context, and configuration manifests below to determine the project entrypoints, architecture, and code flow autonomously:\n\n${promptRepoContext}`
+        );
       }
 
       payloadSections.push(`[USER REQUEST]\n${request.prompt}`);
@@ -127,7 +133,7 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 // ---------------------------------------------------------------------------
-// Full Repo & Workspace Context Gatherer
+// Generic Workspace & Repository Context Gatherer (Universal for All Repo Types)
 // ---------------------------------------------------------------------------
 
 interface ContextResult {
@@ -136,11 +142,68 @@ interface ContextResult {
 }
 
 /**
- * Gathers complete context from:
+ * Common configuration/manifest file patterns across all major programming
+ * languages, build tools, and frameworks.
+ */
+const GENERIC_MANIFEST_PATTERNS = [
+  // Node / TS / JS / Deno / Bun
+  'package.json',
+  'tsconfig.json',
+  'deno.json',
+  'bunfig.toml',
+  // Python
+  'pyproject.toml',
+  'setup.py',
+  'requirements.txt',
+  'Pipfile',
+  'environment.yml',
+  // Rust
+  'Cargo.toml',
+  // Go
+  'go.mod',
+  'go.work',
+  // Java / Kotlin / JVM
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'settings.gradle',
+  // C / C++ / Native
+  'CMakeLists.txt',
+  'Makefile',
+  'meson.build',
+  // .NET / C# / F#
+  '*.sln',
+  '*.csproj',
+  // Ruby
+  'Gemfile',
+  // PHP
+  'composer.json',
+  // Swift / Dart / Mobile
+  'Package.swift',
+  'pubspec.yaml',
+  // Containers & Infrastructure
+  'Dockerfile',
+  'docker-compose.yml',
+  'docker-compose.yaml',
+  'compose.yaml',
+  'main.tf',
+  // Documentation / Project Overview
+  'README.md',
+  'README.txt',
+  'README',
+];
+
+const EXCLUDED_DIRS_GLOB =
+  '{**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/.vscode/**,**/out/**,**/target/**,**/__pycache__/**,**/.venv/**,**/venv/**,**/bin/**,**/obj/**,**/vendor/**,**/.next/**,**/.turbo/**}';
+
+/**
+ * Gathers complete, generic repository context from:
  *   1. User-attached chat references (#file, #codebase, #selection, etc.)
- *   2. Active text editor (file name, language, selection, full code or surrounding window)
+ *   2. Active text editor (file name, language, selection, surrounding code)
  *   3. Open tabs across editor groups
- *   4. Workspace directory tree & key entry-point/config files (package.json, pyproject.toml, main.*, etc.)
+ *   4. Generic workspace file tree & tech stack language breakdown
+ *   5. Key project manifests / configuration files across any repo type
+ *   6. Recent chat history turns
  */
 async function gatherFullRepoContext(
   request: vscode.ChatRequest,
@@ -173,7 +236,7 @@ async function gatherFullRepoContext(
       }
     }
     if (refTexts.length > 0) {
-      promptSections.push(`## Explicit Chat References:\n${refTexts.join('\n\n')}`);
+      promptSections.push(`## Explicit User References:\n${refTexts.join('\n\n')}`);
     }
   }
 
@@ -189,7 +252,7 @@ async function gatherFullRepoContext(
     if (!selection.isEmpty) {
       const selectedText = doc.getText(selection).slice(0, 1500);
       bm25Parts.push(`selection:${selectedText}`);
-      promptSections.push(`## Active File: ${relPath} (${doc.languageId})\n### Selected Code:\n\`\`\`${doc.languageId}\n${selectedText}\n\`\`\``);
+      promptSections.push(`## Active Editor File: ${relPath} (${doc.languageId})\n### Selected Code:\n\`\`\`${doc.languageId}\n${selectedText}\n\`\`\``);
     } else {
       // Include surrounding code or full file if reasonably sized (< 400 lines)
       let codeSnippet = '';
@@ -202,7 +265,7 @@ async function gatherFullRepoContext(
         codeSnippet = doc.getText(new vscode.Range(startLine, 0, endLine, doc.lineAt(endLine).text.length));
       }
       bm25Parts.push(`context:${codeSnippet.slice(0, 500)}`);
-      promptSections.push(`## Active File: ${relPath} (${doc.languageId})\n\`\`\`${doc.languageId}\n${codeSnippet}\n\`\`\``);
+      promptSections.push(`## Active Editor File: ${relPath} (${doc.languageId})\n\`\`\`${doc.languageId}\n${codeSnippet}\n\`\`\``);
     }
   }
 
@@ -211,64 +274,91 @@ async function gatherFullRepoContext(
     .flatMap((g) => g.tabs)
     .map((t) => (t.input instanceof vscode.TabInputText ? vscode.workspace.asRelativePath(t.input.uri) : ''))
     .filter(Boolean)
-    .slice(0, 20);
+    .slice(0, 25);
 
   if (openTabNames.length > 0) {
     bm25Parts.push(`openfiles:${openTabNames.map((f) => path.basename(f)).join(' ')}`);
-    promptSections.push(`## Currently Open Tabs:\n${openTabNames.map((f) => `- ${f}`).join('\n')}`);
+    promptSections.push(`## Currently Open Tabs in Editor:\n${openTabNames.map((f) => `- ${f}`).join('\n')}`);
   }
 
-  // --- 4. Workspace structure & Entry Point discovery ---
+  // --- 4. Generic Workspace Structure, Tech Stack & Manifests ---
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (workspaceFolders && workspaceFolders.length > 0) {
     try {
-      // Find top files across workspace (excluding build artifacts)
-      const files = await vscode.workspace.findFiles(
-        '**/*',
-        '{**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/.vscode/**,**/out/**,**/target/**,**/__pycache__/**,**/.venv/**,**/venv/**}',
-        40
-      );
+      // Sample workspace files across the project
+      const files = await vscode.workspace.findFiles('**/*', EXCLUDED_DIRS_GLOB, 60);
 
       const relFiles = files.map((f) => vscode.workspace.asRelativePath(f)).sort();
-      if (relFiles.length > 0) {
-        promptSections.push(`## Workspace File Tree (Sample):\n${relFiles.slice(0, 35).map((f) => `- ${f}`).join('\n')}`);
-      }
 
-      // Read key project manifest or entry-point files if present
-      const entryPatterns = [
-        'package.json',
-        'pyproject.toml',
-        'requirements.txt',
-        'main.py',
-        'app.py',
-        'src/index.ts',
-        'src/main.ts',
-        'src/extension.ts',
-        'index.js',
-        'Cargo.toml',
-        'go.mod',
-      ];
-
-      const entryFileContents: string[] = [];
-      for (const pattern of entryPatterns) {
-        const matching = await vscode.workspace.findFiles(
-          pattern,
-          '{**/node_modules/**,**/.git/**,**/dist/**}',
-          1
-        );
-        if (matching.length > 0) {
-          try {
-            const raw = await vscode.workspace.fs.readFile(matching[0]);
-            const text = Buffer.from(raw).toString('utf8');
-            const rel = vscode.workspace.asRelativePath(matching[0]);
-            entryFileContents.push(`### ${rel}\n\`\`\`\n${text.slice(0, 2000)}\n\`\`\``);
-            bm25Parts.push(`entry:${path.basename(rel)}`);
-          } catch {}
+      // Compute file extension distribution to detect repository tech stack
+      const extCounts: Record<string, number> = {};
+      for (const rel of relFiles) {
+        const ext = path.extname(rel).toLowerCase();
+        if (ext) {
+          extCounts[ext] = (extCounts[ext] || 0) + 1;
         }
       }
 
-      if (entryFileContents.length > 0) {
-        promptSections.push(`## Key Project Configuration & Entry Points:\n${entryFileContents.join('\n\n')}`);
+      const topExtensions = Object.entries(extCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([ext, count]) => `${ext} (${count} files)`)
+        .join(', ');
+
+      if (topExtensions) {
+        bm25Parts.push(`techstack:${topExtensions}`);
+      }
+
+      if (relFiles.length > 0) {
+        const treeInfo = [
+          `## Workspace File Tree Structure (Sample of ${Math.min(relFiles.length, 50)} files):`,
+          topExtensions ? `Primary file types detected: ${topExtensions}` : '',
+          '```',
+          ...relFiles.slice(0, 50),
+          '```',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        promptSections.push(treeInfo);
+      }
+
+      // Read key project manifest and config files dynamically across ecosystems
+      const manifestContents: string[] = [];
+      const visitedFiles = new Set<string>();
+
+      for (const pattern of GENERIC_MANIFEST_PATTERNS) {
+        if (manifestContents.length >= 6) {
+          break; // Limit total manifest files to keep token payload optimal
+        }
+
+        const matches = await vscode.workspace.findFiles(pattern, EXCLUDED_DIRS_GLOB, 2);
+        for (const uri of matches) {
+          const rel = vscode.workspace.asRelativePath(uri);
+          if (visitedFiles.has(rel)) {
+            continue;
+          }
+          visitedFiles.add(rel);
+
+          try {
+            const raw = await vscode.workspace.fs.readFile(uri);
+            const text = Buffer.from(raw).toString('utf8');
+            // Trim to max 2500 chars per config file
+            const snippet = text.length > 2500 ? `${text.slice(0, 2500)}\n... [truncated]` : text;
+            manifestContents.push(`### Configuration / Manifest: ${rel}\n\`\`\`\n${snippet}\n\`\`\``);
+            bm25Parts.push(`manifest:${path.basename(rel)}`);
+
+            if (manifestContents.length >= 6) {
+              break;
+            }
+          } catch {
+            // Skip unreadable file
+          }
+        }
+      }
+
+      if (manifestContents.length > 0) {
+        promptSections.push(`## Repository Manifests & Configuration:\n${manifestContents.join('\n\n')}`);
       }
     } catch {
       // Workspace scan failure handled silently
