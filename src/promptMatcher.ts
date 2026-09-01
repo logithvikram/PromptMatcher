@@ -23,19 +23,28 @@ export class PromptMatcher {
   // Initialization
   // ---------------------------------------------------------------------------
 
+  public get documentCount(): number {
+    return this.records.length;
+  }
+
+  public getRecords(): PromptRecord[] {
+    return [...this.records];
+  }
+
   /**
    * Scan `promptsDir` recursively, parse every .md file with gray-matter,
    * and build a BM25 index over the structured fields.
+   * @returns number of documents successfully indexed.
    */
-  public initialize(promptsDir: string): void {
+  public initialize(promptsDir: string): number {
     this.records = [];
-    const docs: Array<{ name: string; description: string; tags: string; content: string }> = [];
+    const docs: Array<Record<string, string>> = [];
 
     this.loadDirectory(promptsDir, docs);
 
     if (docs.length === 0) {
       this.bm25 = null;
-      return;
+      return 0;
     }
 
     this.bm25 = new BM25(docs, {
@@ -51,11 +60,13 @@ export class PromptMatcher {
         content: 1,
       },
     });
+
+    return docs.length;
   }
 
   private loadDirectory(
     dir: string,
-    docs: Array<{ name: string; description: string; tags: string; content: string }>
+    docs: Array<Record<string, string>>
   ): void {
     if (!fs.existsSync(dir)) {
       return;
@@ -67,21 +78,53 @@ export class PromptMatcher {
       if (entry.isDirectory()) {
         this.loadDirectory(fullPath, docs);
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        const raw = fs.readFileSync(fullPath, 'utf8');
-        const { data, content } = matter(raw);
+        try {
+          const raw = fs.readFileSync(fullPath, 'utf8');
+          let data: Record<string, any> = {};
+          let content = raw;
 
-        // Build structured document for BM25 field boosting
-        const doc = {
-          name: String(data.name || data.title || entry.name),
-          description: String(data.description || ''),
-          tags: Array.isArray(data.tags)
+          try {
+            const parsed = matter(raw);
+            data = parsed.data || {};
+            content = parsed.content || raw;
+          } catch {
+            // If YAML frontmatter fails to parse, fallback to using raw content
+            content = raw;
+          }
+
+          // Build structured document for BM25 field boosting
+          // Fast-BM25 throws 'Input text cannot be null or empty' if any field value is empty.
+          // Therefore, only include fields with non-empty trimmed strings.
+          const docName = String(data.name || data.title || entry.name).trim();
+          const doc: Record<string, string> = {
+            name: docName || entry.name,
+          };
+
+          const desc = String(data.description || '').trim();
+          if (desc) {
+            doc.description = desc;
+          }
+
+          const rawTags = Array.isArray(data.tags)
             ? data.tags.join(' ')
-            : String(data.tags || ''),
-          content,
-        };
+            : String(data.tags || '');
+          const tags = rawTags.trim();
+          if (tags) {
+            doc.tags = tags;
+          }
 
-        docs.push(doc);
-        this.records.push({ filePath: fullPath, content });
+          const cleanContent = (content || '').trim();
+          if (cleanContent) {
+            doc.content = cleanContent;
+          } else {
+            doc.content = doc.name;
+          }
+
+          docs.push(doc);
+          this.records.push({ filePath: fullPath, content });
+        } catch {
+          // Skip unreadable files without failing the entire index load
+        }
       }
     }
   }
@@ -100,14 +143,23 @@ export class PromptMatcher {
       return null;
     }
 
-    const results = this.bm25.search(compositeQuery, 1);
-
-    if (results.length === 0 || results[0].score <= 0) {
+    const query = (compositeQuery || '').trim();
+    if (!query) {
       return null;
     }
 
-    const best = results[0];
-    return this.records[best.index] ?? null;
+    try {
+      const results = this.bm25.search(query, 1);
+
+      if (results.length === 0 || results[0].score <= 0) {
+        return null;
+      }
+
+      const best = results[0];
+      return this.records[best.index] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -133,10 +185,19 @@ export class PromptMatcher {
       return [];
     }
 
-    const results = this.bm25.search(compositeQuery, topK);
-    return results
-      .filter((r) => r.score > 0)
-      .map((r) => this.records[r.index])
-      .filter(Boolean) as PromptRecord[];
+    const query = (compositeQuery || '').trim();
+    if (!query) {
+      return [];
+    }
+
+    try {
+      const results = this.bm25.search(query, topK);
+      return results
+        .filter((r) => r.score > 0)
+        .map((r) => this.records[r.index])
+        .filter(Boolean) as PromptRecord[];
+    } catch {
+      return [];
+    }
   }
 }
